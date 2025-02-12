@@ -42,9 +42,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _getCurrentScreen(){
     if(_currentScreenInd == 0){
-      return RoutineScreen();
+      return const RoutineScreen();
     }else{
-      return StreaksScreen();
+      return const StreaksScreen();
     }
   }
 

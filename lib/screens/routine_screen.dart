@@ -1,9 +1,9 @@
-import 'dart:io';
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-
+import '../app_constants.dart';
 import '../utilities/common_methods.dart';
+import '../utilities/image_handling.dart';
 
 class RoutineScreen extends StatefulWidget {
   const RoutineScreen({super.key});
@@ -13,32 +13,43 @@ class RoutineScreen extends StatefulWidget {
 }
 
 class _RoutineScreenState extends State<RoutineScreen> {
-  final List<String> routines = ['cleanser', 'toner', 'moisturizer', 'sunscreen', 'lipBalm'];
-
-  Map<int, String?> uploadedImages = {}; // Store uploaded image URLs
-
+  Map<String, String?> uploadedImages = {}; // Stores {routine: time}
   final ImagePicker _picker = ImagePicker();
 
-  Future<void> _pickAndUploadImage(int index) async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-    if (image == null) return;
+  @override
+  void initState() {
+    fetchImages();
+    super.initState();
+  }
 
-    File file = File(image.path);
-    String fileName = 'skincare_${routines[index]}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+  Future<void> pickAndSaveImage(String routineName) async {
+    final XFile? imageFile = await _picker.pickImage(source: ImageSource.gallery);
 
-    try {
-      TaskSnapshot snapshot = await FirebaseStorage.instance.ref('skincare/$fileName').putFile(file);
-      String downloadUrl = await snapshot.ref.getDownloadURL();
-
-      setState(() {
-        uploadedImages[index] = downloadUrl;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Image uploaded successfully!")));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Upload failed: $e")));
+    if (imageFile != null) {
+      String? savedPath = await saveImageToLocal(imageFile, routineName);
+      if (savedPath != null) {
+        log("Image saved at: $savedPath");
+        fetchImages(); // Refresh images after saving
+      }
     }
   }
+
+  Future<void> fetchImages() async {
+    String today = DateTime.now().toIso8601String().split('T')[0];
+
+    List<String> allTodayImages = await getImagesByDate(today);
+
+    for (var routine in routines) {
+      for (var image in allTodayImages) {
+        if (image.contains(routine)) {
+          uploadedImages[routine] = image;
+          break;
+        }
+      }
+    }
+    setState(() {});
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -47,28 +58,30 @@ class _RoutineScreenState extends State<RoutineScreen> {
       body: ListView.builder(
         itemCount: routines.length,
         itemBuilder: (context, ind) {
+          String routine = routines[ind];
+          String? uploadTime = uploadedImages[routine]?.split(routine)[1].replaceFirst("_", "").replaceFirst(".jpg", "").replaceFirst("-", ":");
+
           return ListTile(
             leading: Container(
               decoration: BoxDecoration(
-                color: Colors.pink.shade800.withOpacity(.2),
+                color: Colors.pink.shade800.withOpacity(.1),
                 borderRadius: BorderRadius.circular(5),
               ),
               width: 40,
               height: 40,
-              child: const Icon(Icons.check),
+              child: (uploadTime != null)?const Icon( Icons.check):null, // Icon to indicate image
             ),
             title: Text(getTitle(ind), style: const TextStyle(fontWeight: FontWeight.w500)),
-            subtitle: Text(getSubtitle(ind), style: TextStyle(color: Colors.pink.shade800, fontSize: 15)),
+            subtitle: Text(getSubtitle(ind), style: TextStyle(color: Colors.pink.shade800, fontSize: 16)),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 GestureDetector(
-                  onTap: () => _pickAndUploadImage(ind),
-                  child: Icon(Icons.camera_alt_outlined, color: Colors.pink.shade800),
+                  onTap: () => (uploadTime == null) ? pickAndSaveImage(routine) : null,
+                  child: const Icon(Icons.camera_alt_outlined),
                 ),
-                const SizedBox(width: 10),
-                if (uploadedImages.containsKey(ind))
-                  Icon(Icons.check_circle, color: Colors.green) // Show check when uploaded
+                const SizedBox(width: 3,),
+                if (uploadTime != null) Text(uploadTime, style: TextStyle(color: Colors.pink.shade800, fontSize: 16, fontWeight: FontWeight.w400)) // Show time
               ],
             ),
           );
@@ -90,6 +103,4 @@ class _RoutineScreenState extends State<RoutineScreen> {
   String getTitle(int ind) {
     return ind == 4 ? "Lip Balm" : capitalize(routines[ind]);
   }
-
-
 }
